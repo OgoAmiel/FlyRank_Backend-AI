@@ -1,6 +1,11 @@
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
+
+
+class TaskCreate(BaseModel):
+    title: str = None
 
 tasks = [
     {
@@ -49,3 +54,21 @@ def get_task(task_id: int):
         if task["id"] == task_id:
             return task
     raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+@app.post("/tasks", status_code=201, summary="Create a new task")
+def create_task(task: TaskCreate):
+    """Creates a new task with the provided title."""
+    if not task.title or not task.title.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Title is required"
+        )
+
+    new_task = {
+        "id": len(tasks) + 1,
+        "title": task.title,
+        "done": False
+    }
+
+    tasks.append(new_task)
+    return new_task
