@@ -7,6 +7,10 @@ app = FastAPI()
 class TaskCreate(BaseModel):
     title: str = None
 
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    done: bool | None = None
+
 tasks = [
     {
         "id": 1,
@@ -55,14 +59,12 @@ def get_task(task_id: int):
             return task
     raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+
 @app.post("/tasks", status_code=201, summary="Create a new task")
 def create_task(task: TaskCreate):
     """Creates a new task with the provided title."""
     if not task.title or not task.title.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Title is required"
-        )
+        raise HTTPException(status_code=400, detail="Title is required")
 
     new_task = {
         "id": len(tasks) + 1,
@@ -72,3 +74,33 @@ def create_task(task: TaskCreate):
 
     tasks.append(new_task)
     return new_task
+
+
+@app.put("/tasks/{task_id}", summary="Update an existing task")
+def update_task(task_id: int, updated_task: TaskUpdate):
+    """Updates an existing task with the provided title and/or done status."""
+    for task in tasks:
+        if task["id"] == task_id:
+
+            if updated_task.title is not None:
+                if not updated_task.title.strip():
+                    raise HTTPException(status_code=400, detail="Title is required")
+
+                task["title"] = updated_task.title
+
+            if updated_task.done is not None:
+                task["done"] = updated_task.done
+
+            return task
+
+    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+
+@app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task")
+def delete_task(task_id: int):
+    """Deletes a specific task by its ID."""
+    for task in tasks:
+        if task["id"] == task_id:
+            tasks.remove(task)
+            return {"message": f"Task {task_id} deleted successfully"}
+    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
