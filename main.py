@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from sqlmodel import Session, select
 from pydantic import BaseModel
 
-from database import create_db_and_tables
+from database import create_db_and_tables, get_session
 from models import Task
 
 @asynccontextmanager
@@ -20,23 +21,6 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     done: bool | None = None
 
-tasks = [
-    {
-        "id": 1,
-        "title": "Learn FastAPI",
-        "done": False
-    },
-    {
-        "id": 2,
-        "title": "Build CRUD API",
-        "done": True
-    },
-    {
-        "id": 3,
-        "title": "Submit assignment",
-        "done": False
-    }
-]
 
 @app.get("/", summary="API info")
 def root():
@@ -55,18 +39,18 @@ def health():
 
 
 @app.get("/tasks", summary="Get all tasks")
-def get_tasks():
+def get_tasks(session: Session = Depends(get_session)):
     """Returns the list of all tasks."""
-    return tasks
+    return session.exec(select(Task)).all()
 
 
 @app.get("/tasks/{task_id}", summary="Get a specific task")
-def get_task(task_id: int):
+def get_task(task_id: int, session: Session = Depends(get_session)):
     """Returns a specific task by its ID."""
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    return task
 
 
 @app.post("/tasks", status_code=201, summary="Create a new task")
