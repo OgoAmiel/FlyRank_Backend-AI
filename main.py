@@ -67,30 +67,40 @@ def create_task(task: TaskCreate, session: Session = Depends(get_session)):
 
 
 @app.put("/tasks/{task_id}", summary="Update an existing task")
-def update_task(task_id: int, updated_task: TaskUpdate):
+def update_task(task_id: int, updated_task: TaskUpdate, session: Session = Depends(get_session)):
     """Updates an existing task with the provided title and/or done status."""
-    for task in tasks:
-        if task["id"] == task_id:
 
-            if updated_task.title is not None:
-                if not updated_task.title.strip():
-                    raise HTTPException(status_code=400, detail="Title is required")
+    task = session.get(Task, task_id)
 
-                task["title"] = updated_task.title
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Task {task_id} not found"
+        )
 
-            if updated_task.done is not None:
-                task["done"] = updated_task.done
+    if updated_task.title is not None:
+        if not updated_task.title.strip():
+            raise HTTPException(status_code=400, detail="Title is required")
 
-            return task
+        task.title = updated_task.title
 
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    if updated_task.done is not None:
+        task.done = updated_task.done
+
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+
+    return task
 
 
 @app.delete("/tasks/{task_id}", status_code=204, summary="Delete a task")
-def delete_task(task_id: int):
+def delete_task(task_id: int, session: Session = Depends(get_session)):
     """Deletes a specific task by its ID."""
-    for task in tasks:
-        if task["id"] == task_id:
-            tasks.remove(task)
-            return {"message": f"Task {task_id} deleted successfully"}
-    raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    task = session.get(Task, task_id)
+
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    session.delete(task)
+    session.commit()
