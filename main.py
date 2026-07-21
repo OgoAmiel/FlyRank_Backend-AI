@@ -54,18 +54,15 @@ def get_task(task_id: int, session: Session = Depends(get_session)):
 
 
 @app.post("/tasks", status_code=201, summary="Create a new task")
-def create_task(task: TaskCreate):
+def create_task(task: TaskCreate, session: Session = Depends(get_session)):
     """Creates a new task with the provided title."""
     if not task.title or not task.title.strip():
         raise HTTPException(status_code=400, detail="Title is required")
 
-    new_task = {
-        "id": len(tasks) + 1,
-        "title": task.title,
-        "done": False
-    }
-
-    tasks.append(new_task)
+    new_task = Task(title=task.title, done=False)
+    session.add(new_task)
+    session.commit()
+    session.refresh(new_task)
     return new_task
 
 
