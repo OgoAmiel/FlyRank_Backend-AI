@@ -1,19 +1,35 @@
-# Task API
+# ToDo List App
 
-A simple CRUD API built with FastAPI for managing a to-do list.
-The application stores data in memory using a Python list, meaning all tasks are lost when the server is restarted.
+This ToDo List is a RESTful backend application developed with **FastAPI** and **SQLModel** that allows users to perform full CRUD (Create, Read, Update and Delete) operations on tasks.
 
 ---
 
 ## Technologies Used
 
-- Python 3
-- FastAPI
-- Uvicorn
+| Technology | Purpose |
+|------------|---------|
+| Python | Programming Language |
+| FastAPI | REST API Framework |
+| SQLModel | ORM |
+| SQLAlchemy | Database Engine |
+| SQLite | Database |
+| Uvicorn | ASGI Server |
 
 ---
 
 ## Installation
+
+Clone the repository
+
+```bash
+git clone https://github.com/OgoAmiel/FlyRank_Backend-AI
+```
+
+Navigate into the project
+
+```bash
+cd todo_list
+```
 
 Create a virtual environment:
 
@@ -34,6 +50,7 @@ Install dependencies:
 ```bash
 pip install fastapi uvicorn
 pip install -r requirements.txt
+pip install sqlmodel
 ```
 
 ---
@@ -46,17 +63,32 @@ Start the development server:
 uvicorn main:app --reload
 ```
 
-The API will be available at:
+The application will be available at
 
-```text
-http://127.0.0.1:8000
+```
+http://127.0.0.1:8000/tasks
 ```
 
-Swagger documentation:
+Swagger UI
 
-```text
-http://127.0.0.1:8000/docs
 ```
+http://127.0.0.1:8000/docs#/
+```
+---
+
+## Database
+
+The project uses **SQLite** together with **SQLModel**.
+
+The database file
+
+```
+tasks.db
+```
+
+is automatically created when the application starts.
+
+If the database is empty, three sample tasks are inserted automatically.
 
 ---
 
@@ -76,22 +108,26 @@ http://127.0.0.1:8000/docs
 
 ## Example Request
 
-### Create a new task
+### Create a Task
 
-```powershell
-Invoke-RestMethod `
-    -Uri "http://127.0.0.1:8000/tasks" `
-    -Method POST `
-    -ContentType "application/json" `
-    -Body '{"title":"Buy milk"}'
+```http
+POST /tasks
 ```
 
-### Response
+Request
 
 ```json
 {
-    "id": 4,
-    "title": "Buy milk",
+    "title": "Write a Song"
+}
+```
+
+Response
+
+```json
+{
+    "id": 5,
+    "title": "Write a Song",
     "done": false
 }
 ```
@@ -131,16 +167,43 @@ FastAPI automatically generates interactive API documentation.
 Open:
 
 ```text
-http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/docs#/
 ```
 
 to test the API directly from your browser.
 
-Insert your Swagger screenshot below:
+Swagger Screenshot Below
 
 ![Swagger Screenshot](images/swagger.png)
 
 ---
+
+# 🗄 Example SQL Queries
+
+Retrieve all tasks
+
+```sql
+SELECT * FROM tasks;
+```
+
+Completed tasks
+
+```sql
+SELECT * FROM tasks WHERE done = 1;
+```
+
+Count tasks
+
+```sql
+SELECT COUNT(*) FROM tasks;
+```
+
+# 🗃 Database
+
+> SQLite database viewed using DB Browser for SQLite.
+
+![Database](images/database-view.png)
+
 
 ## Author
 
