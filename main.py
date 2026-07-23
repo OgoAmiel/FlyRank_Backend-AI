@@ -12,8 +12,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=lifespan)
-
+app = FastAPI(title="Task API", version="1.0", lifespan=lifespan)
 class TaskCreate(BaseModel):
     title: str = None
 
