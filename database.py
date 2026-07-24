@@ -1,14 +1,25 @@
+import os
+
+from dotenv import load_dotenv
 from sqlmodel import SQLModel, Session, create_engine, select
+
 from models import Task
 
-# SQLite database file
-DATABASE_URL = "sqlite:///tasks.db"
+# Load environment variables
+load_dotenv()
 
-# Create the database engine
+DATABASE_URL = (
+    f"postgresql+psycopg://"
+    f"{os.getenv('POSTGRES_USER')}:"
+    f"{os.getenv('POSTGRES_PASSWORD')}@"
+    f"{os.getenv('POSTGRES_HOST')}:"
+    f"{os.getenv('POSTGRES_PORT')}/"
+    f"{os.getenv('POSTGRES_DB')}"
+)
+
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
-    connect_args={"check_same_thread": False}
+    echo=True
 )
 
 
