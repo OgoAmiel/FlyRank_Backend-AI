@@ -1,6 +1,6 @@
 # ToDo List App
 
-This ToDo List is a RESTful backend application developed with **FastAPI** and **SQLModel** that allows users to perform full CRUD (Create, Read, Update and Delete) operations on tasks.
+This ToDo List is a RESTful backend application developed with **FastAPI**, **SQLModel**, and **PostgreSQL** that allows users to perform full CRUD (Create, Read, Update and Delete) operations on tasks.
 
 ---
 
@@ -12,7 +12,9 @@ This ToDo List is a RESTful backend application developed with **FastAPI** and *
 | FastAPI | REST API Framework |
 | SQLModel | ORM |
 | SQLAlchemy | Database Engine |
-| SQLite | Database |
+| PostgreSQL | Relational database |
+| Psycopg | PostgreSQL database driver |
+| Docker | Containerization |
 | Uvicorn | ASGI Server |
 
 ---
