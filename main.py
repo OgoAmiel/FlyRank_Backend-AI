@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from database import create_db_and_tables
 from routes.tasks import router as task_router
 from routes.auth import router as auth_router
+from routes.protected import router as protected_router
 from supabase_client import supabase
 
 
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Task API", version="1.0", lifespan=lifespan)
 app.include_router(task_router)
 app.include_router(auth_router)
+app.include_router(protected_router)
 
 @app.get("/", summary="API info")
 def root():
@@ -29,7 +31,13 @@ def root():
     return {
         "name": "Task API",
         "version": "1.0",
-        "endpoints": ["/tasks", "/auth/signup", "/auth/login"],
+        "endpoints": [
+            "/tasks",
+            "/auth/signup",
+            "/auth/login",
+            "/public/info",
+            "/protected/profile"
+        ],
     }
 
 @app.get("/health", summary="Health check")
