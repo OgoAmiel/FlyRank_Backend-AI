@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
 from schemas import SignUpRequest, LoginRequest
 from supabase_client import supabase
@@ -15,9 +16,9 @@ def signup(request: SignUpRequest):
     Create a new user account with the provided email and password.
     """
     if not request.email or not request.password:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail="Email and password are required"
+            content={"error": "Email and password are required"}
         )
 
     try:
@@ -29,9 +30,9 @@ def signup(request: SignUpRequest):
         return response.user
 
     except Exception:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail="Unable to create account"
+            content={"error": "Unable to create account"}
         )
 
 
@@ -42,9 +43,9 @@ def login(request: LoginRequest):
     """
 
     if not request.email or not request.password:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail="Email and password are required"
+            content={"error": "Email and password are required"}
         )
 
     try:
@@ -54,9 +55,9 @@ def login(request: LoginRequest):
         })
 
         if not response.session:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=401,
-                detail="Invalid login credentials"
+                content={"error": "Invalid login credentials"}
             )
 
         return {
@@ -64,11 +65,8 @@ def login(request: LoginRequest):
             "refresh_token": response.session.refresh_token
         }
 
-    except HTTPException:
-        raise
-
     except Exception:
-        raise HTTPException(
+        return JSONResponse(
             status_code=401,
-            detail="Invalid login credentials"
+            content={"error": "Invalid login credentials"}
         )

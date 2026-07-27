@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 
 from schemas import TaskCreate, TaskUpdate
 from dependencies import get_task_service
@@ -21,7 +22,7 @@ def get_task(task_id: int, service: TaskService = Depends(get_task_service)):
     task = service.get_task_by_id(task_id)
 
     if task is None:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
     return task
 
 @router.post("/", status_code=201, summary="Create a new task")
@@ -29,7 +30,7 @@ def create_task(task: TaskCreate, service: TaskService = Depends(get_task_servic
     """Creates a new task with the provided title."""
 
     if not task.title or not task.title.strip():
-        raise HTTPException(status_code=400, detail="Title is required")
+        return JSONResponse(status_code=400, content={"error": "Title is required"})
     return service.create_task(task.title)
 
 @router.put("/{task_id}", summary="Update a task")
@@ -37,7 +38,7 @@ def update_task(task_id: int, updated_task: TaskUpdate, service: TaskService = D
     """Updates an existing task."""
 
     if (updated_task.title is not None and not updated_task.title.strip()):
-        raise HTTPException(status_code=400, detail="Title is required")
+        return JSONResponse(status_code=400, content={"error": "Title is required"})
 
     task = service.update_task(
         task_id=task_id,
@@ -46,7 +47,7 @@ def update_task(task_id: int, updated_task: TaskUpdate, service: TaskService = D
     )
 
     if task is None:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
     return task
 
 @router.delete("/{task_id}", status_code=204, summary="Delete a task")
@@ -56,4 +57,4 @@ def delete_task(task_id: int, service: TaskService = Depends(get_task_service)):
     deleted = service.delete_task(task_id)
 
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
