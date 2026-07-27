@@ -35,8 +35,10 @@ def root():
             "/tasks",
             "/auth/signup",
             "/auth/login",
+            "/auth/logout",
             "/public/info",
-            "/protected/profile"
+            "/protected/profile",
+            "/protected/dashboard"
         ],
     }
 
