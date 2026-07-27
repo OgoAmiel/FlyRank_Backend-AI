@@ -25,28 +25,14 @@ def get_protected_profile(request: Request):
     # Extract the Authorization header
     auth_header = request.headers.get("Authorization", "")
     
-    if not auth_header:
+    if not auth_header or not auth_header.startswith("Bearer "):
         return JSONResponse(
             status_code=401,
             content={"error": "Access token required"}
         )
     
-    # Check if header starts with "Bearer "
-    if not auth_header.startswith("Bearer "):
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Access token required"}
-        )
-    
-    # Extract the token
-    token = auth_header[7:]  # Remove "Bearer " prefix
-    
-    if not token:
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Access token required"}
-        )
-    
+    token = auth_header[7:]
+
     try:
         # Verify the token with Supabase
         user = supabase.auth.get_user(token)
