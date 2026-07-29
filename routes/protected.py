@@ -1,24 +1,28 @@
-from fastapi import APIRouter, Request, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase_client import supabase
 
 router = APIRouter(tags=["Public & Protected"])
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 # Reusable dependency for token verification
-async def verify_token(request: Request):
+async def verify_token(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+):
     """
     Dependency that verifies the Authorization header contains a valid token.
     Raises 401 if token is missing, invalid, or expired.
     Returns the authenticated user.
     """
-    auth_header = request.headers.get("Authorization", "")
-    
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if not credentials or credentials.scheme.lower() != "bearer" or not credentials.credentials:
         raise HTTPException(status_code=401, detail="Access token required")
-    
-    token = auth_header[7:]
+
+    token = credentials.credentials
     
     try:
         user_response = supabase.auth.get_user(token)
