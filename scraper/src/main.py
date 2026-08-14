@@ -2,7 +2,7 @@ import requests
 from pathlib import Path
 
 
-URL = "https://books.toscrape.com/"
+URL = "https://toscrape.com/"
 
 CACHE_DIR = Path(__file__).parent.parent / "cache"
 CACHE_FILE = CACHE_DIR / "catalogue-page-1.html"
