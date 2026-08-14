@@ -6,7 +6,7 @@
 
 The target website for this project is:
 
-https://toscrape.com/
+https://books.toscrape.com/
 
 ### Why this site?
 

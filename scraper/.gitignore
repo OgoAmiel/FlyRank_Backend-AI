@@ -8,4 +8,4 @@ venv/
 .env.*
 
 *.log
-scraper/cache/
+cache/
