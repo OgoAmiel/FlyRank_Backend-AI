@@ -1,10 +1,12 @@
 import time
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 # ============================================================
@@ -12,6 +14,10 @@ from bs4 import BeautifulSoup
 # ============================================================
 
 BASE_URL = "https://books.toscrape.com/"
+CATALOGUE_PAGE_1_URL = urljoin(
+    BASE_URL,
+    "catalogue/page-1.html"
+)
 
 USER_AGENT = (
     "FlyRankInternship A9/1.0 "
@@ -20,11 +26,38 @@ USER_AGENT = (
 
 SCRAPER_DIR = Path(__file__).parent.parent
 CACHE_DIR = SCRAPER_DIR / "cache"
+OUTPUT_DIR = SCRAPER_DIR / "output"
 
 PAGE_1_CACHE = CACHE_DIR / "catalogue-page-1.html"
+BOOKS_OUTPUT_FILE = OUTPUT_DIR / "books.json"
+ERRORS_OUTPUT_FILE = OUTPUT_DIR / "errors.json"
 
 REQUEST_TIMEOUT = 10
 REQUEST_DELAY = 0.5
+
+
+# ============================================================
+# SCHEMA
+# ============================================================
+
+class BookRecord(BaseModel):
+    """
+    Validated output record for one scraped book.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    title: str
+    product_url: str
+    price_text: str
+    price_gbp: float
+    availability_text: str
+    rating_text: str
+    description: str | None = None
+    source_page: str
+    fetched_at: str
 
 
 # ============================================================
@@ -79,12 +112,17 @@ def download_page(url: str, cache_file: Path) -> str:
         exist_ok=True
     )
 
+    # The site headers are not reliable for charset.
+    response.encoding = "utf-8"
+
+    html = response.text
+
     cache_file.write_text(
-        response.text,
+        html,
         encoding="utf-8"
     )
 
-    return response.text
+    return html
 
 
 # ============================================================
@@ -380,6 +418,110 @@ def clean_text(
     return text
 
 
+def normalize_price_text(
+    price_text: str | None
+) -> str | None:
+    """
+    Normalize the displayed pound price text.
+    """
+
+    if price_text is None:
+        return None
+
+    return price_text.replace(
+        "Â£",
+        "£"
+    )
+
+
+def parse_price_gbp(
+    price_text: str | None
+) -> float | None:
+    """
+    Convert a raw pound price like '£51.77' into 51.77.
+    """
+
+    if price_text is None:
+        return None
+
+    normalized = price_text.replace(
+        "Â£",
+        "£"
+    ).replace(
+        "£",
+        ""
+    ).replace(
+        ",",
+        ""
+    ).strip()
+
+    if not normalized:
+        return None
+
+    try:
+        return float(normalized)
+    except ValueError:
+        return None
+
+
+def normalize_book_record(
+    raw_record: dict
+) -> BookRecord:
+    """
+    Normalize raw scraped data into a validated record.
+    """
+
+    normalized_record = {
+        **raw_record,
+        "price_gbp": parse_price_gbp(
+            raw_record.get("price_text")
+        )
+    }
+
+    record = BookRecord.model_validate(
+        normalized_record
+    )
+
+    if not record.product_url.startswith(
+        "https://"
+    ):
+        raise ValueError(
+            "product_url must start with https://"
+        )
+
+    if not record.source_page.startswith(
+        "https://"
+    ):
+        raise ValueError(
+            "source_page must start with https://"
+        )
+
+    return record
+
+
+def write_json_file(
+    output_file: Path,
+    payload
+) -> None:
+    """
+    Write JSON output deterministically.
+    """
+
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    output_file.write_text(
+        json.dumps(
+            payload,
+            indent=2,
+            ensure_ascii=False
+        ) + "\n",
+        encoding="utf-8"
+    )
+
+
 # ============================================================
 # DESCRIPTION PARSER
 # ============================================================
@@ -552,8 +694,10 @@ def extract_price(
         "p.price_color"
     )
 
-    return clean_text(
-        price_element
+    return normalize_price_text(
+        clean_text(
+            price_element
+        )
     )
 
 
@@ -661,7 +805,7 @@ def parse_book_page(
 def scrape_book_details(
     book_links: list[str],
     source_pages: dict[str, str]
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """
     Fetch and parse every book detail page.
 
@@ -674,7 +818,8 @@ def scrape_book_details(
     - wait 0.5 seconds between requests
     """
 
-    records = []
+    records_by_url = {}
+    errors = []
 
     print()
     print(
@@ -694,96 +839,94 @@ def scrape_book_details(
         # READ FROM CACHE
         # ----------------------------------------------------
 
-        if cache_file.exists():
-
-            print(
-                f"Reading detail page "
-                f"{index}/{len(book_links)} "
-                f"from cache..."
-            )
-
-            html = read_cached_page(
-                cache_file
-            )
-
-            # Cached pages don't represent a new
-            # network fetch, so no new fetched_at
-            # timestamp is created here.
-            #
-            # The timestamp is read from the current
-            # run below when parsing.
-
-        # ----------------------------------------------------
-        # REAL NETWORK REQUEST
-        # ----------------------------------------------------
-
-        else:
-
-            if index > 1:
-
-                print(
-                    "Waiting before requesting "
-                    "next detail page..."
-                )
-
-                time.sleep(
-                    REQUEST_DELAY
-                )
-
-            print(
-                f"Downloading detail page: "
-                f"{book_url}"
-            )
-
-            html = download_page(
-                book_url,
-                cache_file
-            )
-
-        # ----------------------------------------------------
-        # SOURCE PAGE
-        # ----------------------------------------------------
-
         source_page = source_pages.get(
             book_url,
-            BASE_URL
+            CATALOGUE_PAGE_1_URL
         )
-
-        # ----------------------------------------------------
-        # FETCH TIMESTAMP
-        # ----------------------------------------------------
-        #
-        # For a newly downloaded page this is the actual
-        # fetch time.
-        #
-        # For cached pages, this represents the current
-        # processing time. The page itself is not requested
-        # again.
-        #
 
         fetched_at = datetime.now(
             timezone.utc
         ).isoformat()
 
-        # ----------------------------------------------------
-        # PARSE
-        # ----------------------------------------------------
+        try:
 
-        record = parse_book_page(
-            html=html,
-            product_url=book_url,
-            source_page=source_page,
-            fetched_at=fetched_at
-        )
+            if cache_file.exists():
 
-        records.append(
-            record
-        )
+                print(
+                    f"Reading detail page "
+                    f"{index}/{len(book_links)} "
+                    f"from cache..."
+                )
 
-        print(
-            f"Parsed {index}/{len(book_links)}: "
-            f"{record['title']}"
-        )
+                html = read_cached_page(
+                    cache_file
+                )
+
+            else:
+
+                if index > 1:
+
+                    print(
+                        "Waiting before requesting "
+                        "next detail page..."
+                    )
+
+                    time.sleep(
+                        REQUEST_DELAY
+                    )
+
+                print(
+                    f"Downloading detail page: "
+                    f"{book_url}"
+                )
+
+                html = download_page(
+                    book_url,
+                    cache_file
+                )
+
+            raw_record = parse_book_page(
+                html=html,
+                product_url=book_url,
+                source_page=source_page,
+                fetched_at=fetched_at
+            )
+
+            validated_record = normalize_book_record(
+                raw_record
+            )
+
+            records_by_url[book_url] = (
+                validated_record.model_dump(
+                    mode="json"
+                )
+            )
+
+            print(
+                f"Parsed {index}/{len(book_links)}: "
+                f"{validated_record.title}"
+            )
+
+        except (
+            RuntimeError,
+            ValueError,
+            ValidationError
+        ) as error:
+
+            errors.append({
+                "product_url": book_url,
+                "source_page": source_page,
+                "fetched_at": fetched_at,
+                "reason": str(error)
+            })
+
+            print(
+                f"Skipped {index}/{len(book_links)}: "
+                f"{book_url}"
+            )
+            print(
+                f"Reason: {error}"
+            )
 
     print()
     print(
@@ -792,10 +935,13 @@ def scrape_book_details(
 
     print(
         f"Total raw records: "
-        f"{len(records)}"
+        f"{len(records_by_url)}"
     )
 
-    return records
+    return (
+        list(records_by_url.values()),
+        errors
+    )
 
 
 # ============================================================
@@ -838,7 +984,7 @@ def scrape_catalogue_with_sources():
     for book_url in book_links:
 
         source_pages[book_url] = (
-            current_url
+            CATALOGUE_PAGE_1_URL
         )
 
     all_book_links.extend(
@@ -970,20 +1116,38 @@ if __name__ == "__main__":
     # STAGE 2 — BOOK DETAIL PAGES
     # --------------------------------------------------------
 
-    records = scrape_book_details(
+    records, errors = scrape_book_details(
         book_links,
         source_pages
     )
 
+    write_json_file(
+        BOOKS_OUTPUT_FILE,
+        records
+    )
+
+    write_json_file(
+        ERRORS_OUTPUT_FILE,
+        errors
+    )
+
     # --------------------------------------------------------
-    # SHOW FIRST RECORD
+    # CHECKPOINT OUTPUT
     # --------------------------------------------------------
 
     print()
     print(
-        "First raw record:"
+        "First validated record:"
     )
 
     print(
         records[0]
+    )
+
+    print()
+    print(
+        f"books.json records: {len(records)}"
+    )
+    print(
+        f"errors.json records: {len(errors)}"
     )
