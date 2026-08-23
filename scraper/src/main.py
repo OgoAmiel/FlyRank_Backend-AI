@@ -1,5 +1,6 @@
 import time
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
@@ -31,9 +32,15 @@ OUTPUT_DIR = SCRAPER_DIR / "output"
 PAGE_1_CACHE = CACHE_DIR / "catalogue-page-1.html"
 BOOKS_OUTPUT_FILE = OUTPUT_DIR / "books.json"
 ERRORS_OUTPUT_FILE = OUTPUT_DIR / "errors.json"
+RUN_REPORT_OUTPUT_FILE = OUTPUT_DIR / "run-report.json"
 
 REQUEST_TIMEOUT = 10
 REQUEST_DELAY = 0.5
+
+FAKE_BOOK_URL = (
+    "https://books.toscrape.com/catalogue/"
+    "definitely-not-a-real-book_0000/index.html"
+)
 
 
 # ============================================================
@@ -88,20 +95,51 @@ def download_page(url: str, cache_file: Path) -> str:
         "User-Agent": USER_AGENT
     }
 
-    try:
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT
-        )
+    for attempt in range(1, 3):
 
-    except requests.RequestException as error:
-        raise RuntimeError(
-            f"Request failed: {error}"
-        )
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT
+            )
 
-    # Only HTTP 200 is considered a successful fetch.
-    if response.status_code != 200:
+        except requests.Timeout as error:
+
+            if attempt == 1:
+                print(
+                    f"Request timed out, retrying once: "
+                    f"{url}"
+                )
+                time.sleep(REQUEST_DELAY)
+                continue
+
+            raise RuntimeError(
+                f"Request timed out after retry: {error}"
+            )
+
+        except requests.RequestException as error:
+            raise RuntimeError(
+                f"Request failed: {error}"
+            )
+
+        if response.status_code == 200:
+            break
+
+        if response.status_code in (403, 404):
+            raise RuntimeError(
+                f"Fetch failed with status code: "
+                f"{response.status_code}"
+            )
+
+        if 500 <= response.status_code <= 599 and attempt == 1:
+            print(
+                f"Server error {response.status_code}, "
+                f"retrying once: {url}"
+            )
+            time.sleep(REQUEST_DELAY)
+            continue
+
         raise RuntimeError(
             f"Fetch failed with status code: "
             f"{response.status_code}"
@@ -805,7 +843,7 @@ def parse_book_page(
 def scrape_book_details(
     book_links: list[str],
     source_pages: dict[str, str]
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], dict]:
     """
     Fetch and parse every book detail page.
 
@@ -820,6 +858,8 @@ def scrape_book_details(
 
     records_by_url = {}
     errors = []
+    cache_hits = 0
+    pages_fetched = 0
 
     print()
     print(
@@ -861,6 +901,7 @@ def scrape_book_details(
                 html = read_cached_page(
                     cache_file
                 )
+                cache_hits += 1
 
             else:
 
@@ -884,6 +925,7 @@ def scrape_book_details(
                     book_url,
                     cache_file
                 )
+                pages_fetched += 1
 
             raw_record = parse_book_page(
                 html=html,
@@ -938,10 +980,45 @@ def scrape_book_details(
         f"{len(records_by_url)}"
     )
 
+    stats = {
+        "pages_attempted": len(book_links),
+        "pages_fetched": pages_fetched,
+        "cache_hits": cache_hits,
+        "valid_records": len(records_by_url),
+        "invalid_records": len(errors),
+        "failed_pages": len(errors)
+    }
+
     return (
         list(records_by_url.values()),
-        errors
+        errors,
+        stats
     )
+
+
+def build_run_report(
+    start_epoch: float,
+    started_at: str,
+    stats: dict
+) -> dict:
+    """
+    Build a run-level report with timing and counters.
+    """
+
+    duration_seconds = round(
+        time.time() - start_epoch,
+        3
+    )
+
+    return {
+        "started_at": started_at,
+        "duration_seconds": duration_seconds,
+        "pages_fetched": stats["pages_fetched"],
+        "cache_hits": stats["cache_hits"],
+        "valid_records": stats["valid_records"],
+        "invalid_records": stats["invalid_records"],
+        "failed_pages": stats["failed_pages"]
+    }
 
 
 # ============================================================
@@ -1104,6 +1181,11 @@ def scrape_catalogue_with_sources():
 
 if __name__ == "__main__":
 
+    run_start_epoch = time.time()
+    run_started_at = datetime.now(
+        timezone.utc
+    ).isoformat()
+
     # --------------------------------------------------------
     # STAGE 1 — CATALOGUE
     # --------------------------------------------------------
@@ -1112,11 +1194,33 @@ if __name__ == "__main__":
         scrape_catalogue_with_sources()
     )
 
+    if os.getenv(
+        "INJECT_FAKE_BOOK_URL"
+    ) == "1":
+
+        source_pages[FAKE_BOOK_URL] = (
+            CATALOGUE_PAGE_1_URL
+        )
+
+        book_links = list(
+            dict.fromkeys(
+                [
+                    *book_links,
+                    FAKE_BOOK_URL
+                ]
+            )
+        )
+
+        print(
+            "Injected one fake URL for failure "
+            "handling checkpoint."
+        )
+
     # --------------------------------------------------------
     # STAGE 2 — BOOK DETAIL PAGES
     # --------------------------------------------------------
 
-    records, errors = scrape_book_details(
+    records, errors, stats = scrape_book_details(
         book_links,
         source_pages
     )
@@ -1129,6 +1233,17 @@ if __name__ == "__main__":
     write_json_file(
         ERRORS_OUTPUT_FILE,
         errors
+    )
+
+    run_report = build_run_report(
+        run_start_epoch,
+        run_started_at,
+        stats
+    )
+
+    write_json_file(
+        RUN_REPORT_OUTPUT_FILE,
+        run_report
     )
 
     # --------------------------------------------------------
@@ -1150,4 +1265,8 @@ if __name__ == "__main__":
     )
     print(
         f"errors.json records: {len(errors)}"
+    )
+    print(
+        f"run-report failed_pages: "
+        f"{run_report['failed_pages']}"
     )
