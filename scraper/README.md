@@ -1,48 +1,89 @@
-# Books to Scrape — Web Scraper
+# Books to Scrape — Stage 4 Scraper
 
-## Target Classification
+## Target Classification (Stage 0)
 
-### Target
+- Target: https://books.toscrape.com/
+- Classification: public, unauthenticated HTML pages in a practice sandbox explicitly intended for scraping exercises.
+- Crawl scope: first 3 catalogue pages only.
 
-The target website for this project is:
+## Lane and Setup
 
-https://books.toscrape.com/
+This project runs in the Python lane.
 
-### Why this site?
+Install dependencies:
 
-Books to Scrape is a sandbox website specifically designed for people to practise web scraping.
+```bash
+pip install -r requirements.txt
+```
 
-Because the site is intentionally provided as a scraping practice environment, it is an appropriate target for this assignment.
+Run command (copy/paste):
 
-### Scope
+```bash
+python src/main.py
+```
 
-This scraper will only collect data from the **first three catalogue pages** of Books to Scrape.
+## Output Files
 
-The scraper will not crawl the entire website.
+- `output/books.json`: validated, normalized records only.
+- `output/errors.json`: per-page failures with reasons.
+- `output/run-report.json`: run-level counters and timing.
 
-### Data Collected
+## Record Schema (Pydantic)
 
-The scraper will collect book-related information from the catalogue pages, including:
+Each stored record matches this shape:
 
-- Book title
-- Price
-- Availability
-- Product rating
-- Product URL
+```python
+{
+	"title": str,
+	"product_url": str,          # canonical identity URL
+	"price_text": str,           # original display value, e.g. "£51.77"
+	"price_gbp": float,          # normalized numeric value, e.g. 51.77
+	"availability_text": str,
+	"rating_text": str,
+	"description": str | None,   # optional
+	"source_page": str,
+	"fetched_at": str
+}
+```
 
-### Robots.txt
-I requested:
+Validation behavior:
 
-`https://books.toscrape.com/robots.txt`
+- Every record is validated before being written to `output/books.json`.
+- Invalid records are excluded from `output/books.json` and written to `output/errors.json` with a `reason`.
+- Record identity is `product_url`, so duplicate URLs collapse to one record (idempotent reruns).
 
-The server returned **404 Not Found**, meaning **no robots.txt file was found**.
+## Politeness Rules Implemented
 
-A missing robots.txt file is not treated as permission to scrape. The target is appropriate for this assignment because Books to Scrape is explicitly provided as a sandbox for practicing web scraping.
+- User-Agent header is sent on every network request.
+- Delay between real requests: 0.5 seconds.
+- Request timeout: 10 seconds.
+- Local cache-first behavior for catalogue and detail pages.
+- Retry policy: retry once on timeout and server errors (5xx), no retry for 403/404.
 
-### Responsible Use
+## Proof: Real Run Report
 
-Books to Scrape is being used because it is explicitly intended as a sandbox for practising web scraping.
+Contents of `output/run-report.json` from a real run:
 
-The scope is limited to the first three catalogue pages to avoid unnecessary requests to the website.
+```json
+{
+	"started_at": "2026-08-23T09:36:47.127269+00:00",
+	"duration_seconds": 3.602,
+	"pages_fetched": 0,
+	"cache_hits": 60,
+	"valid_records": 60,
+	"invalid_records": 0,
+	"failed_pages": 0
+}
+```
 
-I will not reuse this code on another site without checking its rules and terms first.
+Why this assignment needed no browser:
+
+The required data is already present in the server-returned HTML, so using a browser engine would add cost and complexity without improving extraction accuracy.
+
+## One Honest Limitation
+
+This scraper intentionally processes only the first three catalogue pages and does not crawl the full site.
+
+## Ethics Note
+
+Use an official API whenever one exists. Never bypass logins, paywalls, or access controls. Collect only the data needed for the task, and keep request volume low to avoid unnecessary load.

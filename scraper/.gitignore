@@ -9,3 +9,6 @@ venv/
 
 *.log
 cache/
+
+output/*
+!output/run-report.json
