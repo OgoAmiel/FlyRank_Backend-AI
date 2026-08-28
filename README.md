@@ -2,6 +2,8 @@
 
 This ToDo List is a RESTful backend application developed with **FastAPI**, **SQLModel**, and **PostgreSQL** that allows users to perform full CRUD (Create, Read, Update and Delete) operations on tasks.
 
+For the LLM integration, switching between a local model and a hosted provider should require changing only LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL in the environment, never hard-coding provider details in source code.
+
 ---
 
 ## Technologies Used
