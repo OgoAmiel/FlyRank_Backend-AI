@@ -107,10 +107,31 @@ If the database is empty, three sample tasks are inserted automatically.
 | POST | `/tasks` | Create a new task |
 | PUT | `/tasks/{id}` | Update an existing task |
 | DELETE | `/tasks/{id}` | Delete a task |
+| POST | `/triage` | Classify support text with deterministic stub mode |
 
 ---
 
 ## Example Request
+
+### Triage Endpoint (Stage 1 Checkpoint)
+
+Set `LLM_STUB=1` in your environment, then run:
+
+Valid request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/triage/ \
+    -H "Content-Type: application/json" \
+    -d "{\"text\":\"I was charged twice and need a refund\"}"
+```
+
+Broken request (missing field):
+
+```bash
+curl -X POST http://127.0.0.1:8000/triage/ \
+    -H "Content-Type: application/json" \
+    -d "{\"message\":\"I was charged twice\"}"
+```
 
 ### Create a Task
 

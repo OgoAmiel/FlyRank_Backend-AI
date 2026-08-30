@@ -8,6 +8,7 @@ from database import create_db_and_tables
 from routes.tasks import router as task_router
 from routes.auth import router as auth_router
 from routes.protected import router as protected_router
+from routes.triage import router as triage_router
 from supabase_client import supabase
 
 
@@ -24,6 +25,7 @@ app = FastAPI(title="Task API", version="1.0", lifespan=lifespan)
 app.include_router(task_router)
 app.include_router(auth_router)
 app.include_router(protected_router)
+app.include_router(triage_router)
 
 @app.get("/", summary="API info")
 def root():
@@ -38,7 +40,8 @@ def root():
             "/auth/logout",
             "/public/info",
             "/protected/profile",
-            "/protected/dashboard"
+            "/protected/dashboard",
+            "/triage"
         ],
     }
 
