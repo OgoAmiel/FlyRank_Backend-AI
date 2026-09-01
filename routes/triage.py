@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from llm.schemas import TriageInput, TriageOutput
+from llm.triage_service import generate_triage_raw_output, get_prompt_version
 
 
 router = APIRouter(prefix="/triage", tags=["Triage"])
@@ -20,9 +21,9 @@ def _invalid_field_response(error: ValidationError) -> JSONResponse:
     )
 
 
-@router.post("/", response_model=TriageOutput, summary="Classify a support message")
+@router.post("/", summary="Classify a support message")
 def triage_message(payload: dict = Body(...)):
-    """Stage 1 endpoint: validate input and return deterministic stub output only."""
+    """Stage 2 endpoint: validate input, then return either stub output or raw model text."""
     try:
         request = TriageInput.model_validate(payload)
     except ValidationError as exc:
@@ -36,10 +37,14 @@ def triage_message(payload: dict = Body(...)):
             reason="Stub mode enabled: model call skipped.",
         )
 
-    return JSONResponse(
-        status_code=503,
-        content={
-            "error": "LLM_STUB is disabled. Stage 1 only supports deterministic stub responses.",
-            "field": "LLM_STUB",
-        },
-    )
+    try:
+        model_text = generate_triage_raw_output(request.text)
+    except RuntimeError as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+    except Exception as exc:
+        return JSONResponse(status_code=502, content={"error": f"Model call failed: {exc}"})
+
+    return {
+        "prompt_version": get_prompt_version(),
+        "model_text": model_text,
+    }
