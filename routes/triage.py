@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from llm.schemas import TriageInput, TriageOutput
-from llm.triage_service import generate_triage_raw_output, get_prompt_version
+from llm.triage_service import TriageProcessingError, generate_triage_output
 
 
 router = APIRouter(prefix="/triage", tags=["Triage"])
@@ -21,9 +21,9 @@ def _invalid_field_response(error: ValidationError) -> JSONResponse:
     )
 
 
-@router.post("/", summary="Classify a support message")
+@router.post("/", response_model=TriageOutput, summary="Classify a support message")
 def triage_message(payload: dict = Body(...)):
-    """Stage 2 endpoint: validate input, then return either stub output or raw model text."""
+    """Stage 3 endpoint: validate input, parse/validate model output, repair once, then return schema JSON."""
     try:
         request = TriageInput.model_validate(payload)
     except ValidationError as exc:
@@ -38,13 +38,12 @@ def triage_message(payload: dict = Body(...)):
         )
 
     try:
-        model_text = generate_triage_raw_output(request.text)
+        output = generate_triage_output(request.text)
+    except TriageProcessingError as exc:
+        return JSONResponse(status_code=422, content={"error": exc.message})
     except RuntimeError as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
     except Exception as exc:
         return JSONResponse(status_code=502, content={"error": f"Model call failed: {exc}"})
 
-    return {
-        "prompt_version": get_prompt_version(),
-        "model_text": model_text,
-    }
+    return output
