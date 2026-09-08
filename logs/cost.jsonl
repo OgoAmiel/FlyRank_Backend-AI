@@ -1,0 +1,8 @@
+{"timestamp": "2026-09-08T13:06:37.087908+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 337, "output_tokens": 28, "duration_ms": 33339, "used_repair": false}
+{"timestamp": "2026-09-08T13:06:44.401794+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 338, "output_tokens": 30, "duration_ms": 7286, "used_repair": false}
+{"timestamp": "2026-09-08T13:06:52.230471+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 337, "output_tokens": 34, "duration_ms": 7817, "used_repair": false}
+{"timestamp": "2026-09-08T13:07:00.440154+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 340, "output_tokens": 34, "duration_ms": 8184, "used_repair": false}
+{"timestamp": "2026-09-08T13:07:07.779012+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 337, "output_tokens": 30, "duration_ms": 7326, "used_repair": false}
+{"timestamp": "2026-09-08T13:07:15.327131+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 337, "output_tokens": 32, "duration_ms": 7536, "used_repair": false}
+{"timestamp": "2026-09-08T13:07:23.390006+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 334, "output_tokens": 33, "duration_ms": 8050, "used_repair": false}
+{"timestamp": "2026-09-08T13:07:32.600897+00:00", "prompt_version": "triage-v1", "model": "llama3.2:3b", "input_tokens": 336, "output_tokens": 35, "duration_ms": 9186, "used_repair": false}

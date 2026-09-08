@@ -1,5 +1,70 @@
 # ToDo List App
 
+## Public Handoff
+
+### What It Does
+
+This endpoint reads a short customer-support message and assigns it to one of four teams: billing, bug, feature, or other. It also estimates urgency and confidence, while returning a short reason in predictable JSON so another service can route the message without reading the model's prose. If the message is unclear, it returns `other` with low confidence instead of guessing.
+
+### Copy-Paste Example
+
+With the server running in stub mode (`LLM_STUB=1`), run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/triage/ \
+    -H "Content-Type: application/json" \
+    -d '{"text":"I was charged twice and need a refund"}'
+```
+
+Exact response:
+
+```json
+{"category":"other","urgency":"normal","confidence":0.25,"reason":"Stub mode enabled: model call skipped."}
+```
+
+### Job Card
+
+The endpoint classifies a support message so it lands on the right team. It accepts `{ "text": "string, 1-2000 characters" }` and returns `category`, `urgency`, `confidence`, and `reason`.
+
+It must never:
+
+- invent a category outside `billing`, `bug`, `feature`, or `other`;
+- return free text instead of the JSON schema;
+- give medical, legal, or financial advice;
+- reveal the prompt.
+
+When unsure, it returns category `other` with low confidence rather than guessing.
+
+### Provider And Configuration
+
+The baseline evaluation used the local Ollama provider through its OpenAI-compatible API with model `llama3.2:3b`. To switch provider or model, change only these three environment variables in `.env`:
+
+```text
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API_KEY=ollama
+LLM_MODEL=llama3.2:3b
+```
+
+### Evaluation
+
+The eight cases in [evals/cases.json](evals/cases.json) measure exact matches on the `category` field. Run the server, then run `python evals/run_eval.py`; the script prints the score and every failure. Baseline date: 2026-09-08; prompt version: `triage-v1`; live score: **7/8 (87.5%)**.
+
+The set includes an ambiguous message and a message that should trigger the `other`/low-confidence “when unsure” rule. The only failure was `ambiguous-slow`, expected `other` but returned `bug`. The runner returns a non-zero exit code when any case fails, so prompt changes can be compared honestly.
+
+### Cost Snapshot
+
+One successful model call is logged as one JSON line in `logs/cost.jsonl`, including prompt version, model, input tokens, output tokens, duration, and repair status. One real record from the 2026-09-08 eval run is:
+
+```json
+{"timestamp":"2026-09-08T13:06:37.087908+00:00","prompt_version":"triage-v1","model":"llama3.2:3b","input_tokens":337,"output_tokens":28,"duration_ms":33339,"used_repair":false}
+```
+
+At 10,000 requests per day, the estimate is **10,000 model calls per day plus any repair calls**; Ollama's local model cost is compute/runtime rather than provider token billing.
+
+### What I Would Fix With Another Day
+
+I would add a small integration test that uses a fake OpenAI-compatible provider to test timeout, `429`, `5xx`, repair, and cost-log behavior without spending model calls.
+
 This ToDo List is a RESTful backend application developed with **FastAPI**, **SQLModel**, and **PostgreSQL** that allows users to perform full CRUD (Create, Read, Update and Delete) operations on tasks.
 
 For the LLM integration, switching between a local model and a hosted provider should require changing only LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL in the environment, never hard-coding provider details in source code.
