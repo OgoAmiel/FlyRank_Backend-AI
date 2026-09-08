@@ -183,6 +183,46 @@ Example success response:
 
 To test the 422 + quarantine path, temporarily edit `prompts/triage-v1.md` to force an invalid category (for example, `payments`), restart server, call `/triage/`, verify `422`, then check that a new line appears in `logs/quarantine.jsonl`. Undo the prompt edit after the test.
 
+### Triage Endpoint (Stage 4: Timeout, Retry, Cost Log, Kill Switch)
+
+Current reliability policy:
+- Client timeout is set to 30 seconds.
+- SDK automatic retries are disabled (`max_retries=0`) and replaced with explicit retry rules.
+- Retries are applied only for timeout, `429`, and `5xx` using backoff with jitter (`1s`, `2s`, `4s` + small random delay).
+- `Retry-After` is honored on `429` when present.
+- `400`, `401`, and `403` are never retried.
+
+Cost logging:
+- Each model call writes one JSON line to `logs/cost.jsonl` with `prompt_version`, `model`, `input_tokens`, `output_tokens`, `duration_ms`, and `used_repair`.
+
+Kill switch:
+- Set `LLM_ENABLED=false` to skip model calls and return an immediate safe response path.
+
+Checkpoint commands:
+
+```powershell
+$env:LLM_ENABLED="false"
+Invoke-RestMethod `
+    -Uri http://127.0.0.1:8000/triage/ `
+    -Method POST `
+    -ContentType "application/json" `
+    -Body '{"text":"Please refund duplicate charge"}'
+```
+
+Expected: immediate response, no new lines in `logs/cost.jsonl`.
+
+```powershell
+$env:LLM_ENABLED="true"
+$env:LLM_API_KEY="wrong-key"
+Invoke-WebRequest `
+    -Uri http://127.0.0.1:8000/triage/ `
+    -Method POST `
+    -ContentType "application/json" `
+    -Body '{"text":"Please refund duplicate charge"}'
+```
+
+Expected: fast failure with clear auth error, no retries for `401`. Restore your real `LLM_API_KEY` after this test.
+
 ### Create a Task
 
 ```http

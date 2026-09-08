@@ -5,7 +5,12 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from llm.schemas import TriageInput, TriageOutput
-from llm.triage_service import TriageProcessingError, generate_triage_output
+from llm.triage_service import (
+    LLMProviderError,
+    LLMTimeoutError,
+    TriageProcessingError,
+    generate_triage_output,
+)
 
 
 router = APIRouter(prefix="/triage", tags=["Triage"])
@@ -19,6 +24,13 @@ def _invalid_field_response(error: ValidationError) -> JSONResponse:
         status_code=400,
         content={"error": f"Invalid field: {field_name}"},
     )
+
+
+def _is_enabled(name: str, default: bool = True) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 @router.post("/", response_model=TriageOutput, summary="Classify a support message")
@@ -37,10 +49,42 @@ def triage_message(payload: dict = Body(...)):
             reason="Stub mode enabled: model call skipped.",
         )
 
+    if not _is_enabled("LLM_ENABLED", default=True):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "LLM processing is disabled by configuration",
+                "fallback": {
+                    "category": "other",
+                    "urgency": "low",
+                    "confidence": 0.0,
+                    "reason": "LLM disabled; returning deterministic fallback.",
+                },
+            },
+        )
+
     try:
         output = generate_triage_output(request.text)
     except TriageProcessingError as exc:
         return JSONResponse(status_code=422, content={"error": exc.message})
+    except LLMTimeoutError as exc:
+        return JSONResponse(status_code=504, content={"error": exc.message})
+    except LLMProviderError as exc:
+        if exc.status_code == 401:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "error": "Provider authentication failed (check LLM_API_KEY)",
+                    "provider_status": 401,
+                },
+            )
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": exc.message,
+                "provider_status": exc.status_code,
+            },
+        )
     except RuntimeError as exc:
         return JSONResponse(status_code=500, content={"error": str(exc)})
     except Exception as exc:

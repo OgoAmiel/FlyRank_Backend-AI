@@ -12,6 +12,9 @@ from routes.triage import router as triage_router
 from supabase_client import supabase
 
 
+load_dotenv()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
