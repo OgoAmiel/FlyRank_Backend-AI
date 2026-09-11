@@ -53,6 +53,10 @@ The eight cases in [evals/cases.json](evals/cases.json) measure exact matches on
 
 A missing `topic` is rejected immediately with `400` before any event is sent, because a malformed request will never succeed no matter how many times you retry it; a failure inside `make-report` is retried with backoff, because that kind of failure is about a bad moment (a dropped connection, a flaky dependency), not a bad request.
 
+### Cron
+
+`0 8 * * *` runs the `heartbeat` job every day at 08:00; `0 22 * * 0` runs it every Sunday at 22:00.
+
 The set includes an ambiguous message and a message that should trigger the `other`/low-confidence “when unsure” rule. The only failure was `ambiguous-slow`, expected `other` but returned `bug`. The runner returns a non-zero exit code when any case fails, so prompt changes can be compared honestly.
 
 ### Cost Snapshot

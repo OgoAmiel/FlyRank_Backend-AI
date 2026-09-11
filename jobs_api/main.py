@@ -31,10 +31,18 @@ async def say_hello(ctx: inngest.Context) -> str:
     return "Hello from the background!"
 
 
+async def _mark_report_failed(ctx: inngest.Context) -> None:
+    original_event = ctx.event.data.get("event", {})
+    report_id = original_event.get("data", {}).get("id")
+    if report_id in reports:
+        reports[report_id]["status"] = "failed"
+
+
 @inngest_client.create_function(
     fn_id="make-report",
     trigger=inngest.TriggerEvent(event="report/requested"),
     retries=2,
+    on_failure=_mark_report_failed,
 )
 async def make_report(ctx: inngest.Context) -> None:
     report_id = ctx.event.data["id"]
@@ -57,7 +65,20 @@ async def make_report(ctx: inngest.Context) -> None:
     }
 
 
-inngest.fast_api.serve(app, inngest_client, [say_hello, make_report])
+@inngest_client.create_function(
+    fn_id="heartbeat",
+    trigger=inngest.TriggerCron(cron="* * * * *"),
+)
+async def heartbeat(ctx: inngest.Context) -> None:
+    pending = sum(1 for r in reports.values() if r["status"] == "pending")
+    done = sum(1 for r in reports.values() if r["status"] == "done")
+    failed = sum(1 for r in reports.values() if r["status"] == "failed")
+    ctx.logger.info(
+        f"heartbeat: pending={pending} done={done} failed={failed}"
+    )
+
+
+inngest.fast_api.serve(app, inngest_client, [say_hello, make_report, heartbeat])
 
 
 @app.get("/health", summary="Health check")
