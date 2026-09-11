@@ -79,6 +79,76 @@ For the LLM integration, switching between a local model and a hosted provider s
 
 ---
 
+## Background Jobs (Reports API)
+
+### What This Is
+
+A small background-jobs demo (`jobs_api/main.py`) built on FastAPI and Inngest. `POST /reports` accepts a topic, hands the slow work off to a background function, and returns instantly; `GET /reports/{id}` lets the client poll for the result. It also demonstrates automatic retries with backoff on failure, and a cron-triggered heartbeat that needs no request to run.
+
+### How To Run
+
+Two processes, each in its own terminal:
+
+```bash
+# Terminal 1 - the FastAPI app
+python -m uvicorn jobs_api.main:app --reload --port 3000
+```
+
+```bash
+# Terminal 2 - the Inngest Dev Server, pointed at the app's Inngest endpoint
+npx inngest-cli@latest dev -u http://127.0.0.1:3000/api/inngest
+```
+
+The Dev Server dashboard is at http://127.0.0.1:8288.
+
+### Endpoints And Functions
+
+| Name | Type | Trigger | Description |
+|------|------|---------|-------------|
+| `POST /reports` | HTTP endpoint | client request | Validates `topic` (400 if missing/empty, no event sent), saves a `pending` report, sends `report/requested`, returns `202` immediately with `{id, status}`. |
+| `GET /reports/{id}` | HTTP endpoint | client request | Returns the stored report (`pending`, `done` + `result`, or `failed`); `404` for an unknown id. |
+| `make-report` | Inngest function | event `report/requested` | `step.sleep` for 8s (stand-in for slow work), then `step.run("build-report", ...)` builds the result and marks the report `done`. Raises an error when `topic` is `"fail"`; configured with `retries=2` and an `on_failure` handler that marks the report `failed` once retries are exhausted. |
+| `heartbeat` | Inngest function | cron `* * * * *` | No endpoint, no event - the clock is the only trigger. Logs one line each minute with the count of `pending`, `done`, and `failed` reports. |
+
+### Pasted Proof
+
+```text
+$ curl.exe -i -X POST http://localhost:3000/reports -H "Content-Type: application/json" -d '{\"topic\":\"cats\"}'
+HTTP/1.1 202 Accepted
+content-type: application/json
+
+{"id":"61ecf313-3704-4c99-817f-cbd0d60e8244","status":"pending"}
+
+$ curl.exe -i http://localhost:3000/reports/61ecf313-3704-4c99-817f-cbd0d60e8244
+HTTP/1.1 200 OK
+content-type: application/json
+
+{"id":"61ecf313-3704-4c99-817f-cbd0d60e8244","topic":"cats","status":"pending"}
+
+# ~10 seconds later, same command
+$ curl.exe -i http://localhost:3000/reports/61ecf313-3704-4c99-817f-cbd0d60e8244
+HTTP/1.1 200 OK
+content-type: application/json
+
+{"id":"61ecf313-3704-4c99-817f-cbd0d60e8244","topic":"cats","status":"done","result":{"summary":"Report about cats","topic":"cats"}}
+```
+
+A client asking again and again like this is called polling; "first pending, then done" is eventual consistency.
+
+### Retries vs Validation (Reports API)
+
+A missing `topic` is rejected immediately with `400` before any event is sent, because a malformed request will never succeed no matter how many times you retry it; a failure inside `make-report` is retried with backoff, because that kind of failure is about a bad moment (a dropped connection, a flaky dependency), not a bad request.
+
+### Cron (Reports API)
+
+`0 8 * * *` runs the `heartbeat` job every day at 08:00; `0 22 * * 0` runs it every Sunday at 22:00.
+
+### Dashboard
+
+![Inngest dashboard showing heartbeat runs completing every minute](images/reports-dashboard.png)
+
+---
+
 ## Technologies Used
 
 | Technology | Purpose |
