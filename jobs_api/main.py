@@ -19,7 +19,7 @@ reports: dict[str, dict] = {}
 
 
 class ReportRequest(BaseModel):
-    topic: str
+    topic: str | None = None
 
 
 @inngest_client.create_function(
@@ -34,6 +34,7 @@ async def say_hello(ctx: inngest.Context) -> str:
 @inngest_client.create_function(
     fn_id="make-report",
     trigger=inngest.TriggerEvent(event="report/requested"),
+    retries=2,
 )
 async def make_report(ctx: inngest.Context) -> None:
     report_id = ctx.event.data["id"]
@@ -42,6 +43,8 @@ async def make_report(ctx: inngest.Context) -> None:
     await ctx.step.sleep("do-the-slow-work", datetime.timedelta(seconds=8))
 
     def _build_report() -> dict:
+        if topic == "fail":
+            raise Exception("The report oven is broken!")
         return {"summary": f"Report about {topic}", "topic": topic}
 
     result = await ctx.step.run("build-report", _build_report)
@@ -65,6 +68,9 @@ def health():
 
 @app.post("/reports", status_code=202, summary="Request a new report")
 async def create_report(payload: ReportRequest):
+    if not payload.topic:
+        raise HTTPException(status_code=400, detail="topic is required")
+
     report_id = str(uuid.uuid4())
     reports[report_id] = {
         "id": report_id,

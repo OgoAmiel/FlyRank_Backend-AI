@@ -49,6 +49,10 @@ LLM_MODEL=llama3.2:3b
 
 The eight cases in [evals/cases.json](evals/cases.json) measure exact matches on the `category` field. Run the server, then run `python evals/run_eval.py`; the script prints the score and every failure. Baseline date: 2026-09-08; prompt version: `triage-v1`; live score: **7/8 (87.5%)**.
 
+### Retries vs Validation
+
+A missing `topic` is rejected immediately with `400` before any event is sent, because a malformed request will never succeed no matter how many times you retry it; a failure inside `make-report` is retried with backoff, because that kind of failure is about a bad moment (a dropped connection, a flaky dependency), not a bad request.
+
 The set includes an ambiguous message and a message that should trigger the `other`/low-confidence “when unsure” rule. The only failure was `ambiguous-slow`, expected `other` but returned `bug`. The runner returns a non-zero exit code when any case fails, so prompt changes can be compared honestly.
 
 ### Cost Snapshot
