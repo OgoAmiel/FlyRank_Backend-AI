@@ -7,7 +7,7 @@ from repositories.base import TaskRepository
 
 class PostgresRepository(TaskRepository):
     """
-    SQLite implementation of the TaskRepository contract.
+    PostgreSQL implementation of the TaskRepository contract.
     """
 
     def get_all_tasks(self) -> list[Task]:

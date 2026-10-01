@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
-import os
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 
 from database import create_db_and_tables
@@ -9,7 +8,6 @@ from routes.tasks import router as task_router
 from routes.auth import router as auth_router
 from routes.protected import router as protected_router
 from routes.triage import router as triage_router
-from supabase_client import supabase
 
 
 load_dotenv()
@@ -17,14 +15,15 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        print("✓ Database initialized")
-    except Exception as e:
-        print(f"⚠ Database not available (this is OK for auth-only development): {e}")
-    print("✓ Connected to Supabase")
+    create_db_and_tables()
+    print("✓ Database initialized")
+    print("✓ Supabase client initialized")
+
     yield
 
-app = FastAPI(title="Task API", version="1.0", lifespan=lifespan)
+
+app = FastAPI(title="FlyRank Backend & AI", version="1.0", lifespan=lifespan)
+
 app.include_router(task_router)
 app.include_router(auth_router)
 app.include_router(protected_router)
