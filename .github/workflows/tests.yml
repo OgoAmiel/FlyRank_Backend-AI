@@ -33,4 +33,8 @@ jobs:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: "5432"
           POSTGRES_DB: test_db
+
+          SUPABASE_URL: "https://example.supabase.co"
+          SUPABASE_KEY: "test_supabase_key"
+
         run: python -m pytest -v
