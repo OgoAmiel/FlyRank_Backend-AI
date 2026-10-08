@@ -21,25 +21,27 @@ The repository was developed as part of practical backend and AI engineering wor
 ## Architecture Overview
 
 ```text
-                    FlyRank Backend & AI
-                            │
-        ┌───────────────────┼────────────────────┐
-        │                   │                    │
-    FastAPI APIs        AI Systems         Data Processing
-        │                   │                    │
-        ├─ Task API         ├─ AI Triage         ├─ Web Scraper
-        ├─ Authentication   ├─ Evaluation        └─ Validation
-        └─ Protected Routes └─ Observability
-        │
-        ├─ Service Layer
-        ├─ Repository Layer
-        └─ PostgreSQL
-
-                Background Processing
-                        │
-                      Inngest
-                        │
-              Event-driven report jobs
+FlyRank Backend & AI
+│
+├── FastAPI APIs
+│   ├── Task API
+│   │   ├── Service Layer
+│   │   ├── Repository Layer
+│   │   └── PostgreSQL
+│   ├── Authentication
+│   └── Protected Routes
+│
+├── AI Systems
+│   ├── AI Triage
+│   ├── Evaluation
+│   └── Observability
+│
+├── Data Processing
+│   ├── Web Scraper
+│   └── Validation
+│
+└── Background Processing
+    └── Inngest event-driven report jobs
 ```
 
 ---
@@ -139,118 +141,147 @@ Invalid, missing, or expired authentication tokens return an HTTP `401 Unauthori
 
 # 3. AI Customer-Support Triage
 
-The repository includes an LLM-powered customer-support triage API.
+The repository includes an LLM-powered customer-support triage API that classifies incoming messages by category and urgency.
 
 ```http
 POST /triage/
 ```
 
-The service classifies incoming support messages using two dimensions.
+### Request
 
-### Category
-
-```text
-billing
-bug
-feature
-other
+```json
+{"text": "I was charged twice for my subscription."}
 ```
 
-### Urgency
-
-```text
-low
-normal
-high
-```
-
-A successful response follows a structured schema:
+### Example Response
 
 ```json
 {
   "category": "billing",
-  "urgency": "high",
+  "urgency": "normal",
   "confidence": 0.94,
-  "reason": "The customer reports a duplicate charge."
+  "reason": "The customer reports a duplicate subscription charge."
 }
 ```
 
-Pydantic models validate the model output before it is returned by the API.
+The confidence and reason are model-generated and can vary across requests.
+
+### Classification Labels
+
+| Category | Meaning |
+|---|---|
+| `billing` | Payments, subscriptions, invoices, charges, and refunds |
+| `bug` | Clearly described errors, crashes, timeouts, or broken functionality |
+| `feature` | Requests for new capabilities or product improvements |
+| `other` | General inquiries, ambiguous messages, or unrelated requests |
+
+| Urgency | Meaning |
+|---|---|
+| `low` | Vague requests, general inquiries, or unclear issues |
+| `normal` | Standard billing issues, noncritical bugs, and ordinary feature requests |
+| `high` | Critical problems such as repeated crashes, login failures, or major service disruptions |
+
+The model selects category and urgency independently. Pydantic validates the response before the API returns it.
+
+### Manually Test the Triage Endpoint (PowerShell)
+
+With FastAPI and Ollama running, execute:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/triage/" -Method POST -ContentType "application/json" -Body '{"text":"I was charged twice for my subscription."}'
+```
+
+To test a critical bug:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/triage/" -Method POST -ContentType "application/json" -Body '{"text":"The app crashes every time I try to log in."}'
+```
+
+The expected labels for the second example are `bug` and `high`.
 
 ---
 
 ## LLM Reliability
 
-The triage service includes several safeguards around external model calls.
+The triage service includes safeguards around model calls and model-generated responses.
 
 ### Timeout Handling
 
-Model requests use a configured request timeout to prevent indefinitely hanging requests.
+Model calls use a configured request timeout to avoid waiting indefinitely. The local evaluation was also run with an increased evaluator timeout.
 
 ### Selective Retries
 
-Transient failures can be retried using exponential-style delays and jitter.
+Timeouts, connection failures, HTTP `429`, and HTTP `5xx` responses can trigger retries with increasing delays and jitter. HTTP `400`, `401`, and `403` responses are not blindly retried.
 
-Retryable failures include:
+### Structured Output Validation and Repair
 
-```text
-Timeout
-Connection failure
-HTTP 429
-HTTP 5xx
-```
-
-Client errors such as `400`, `401`, and `403` are not blindly retried.
-
-### Structured Output Validation
-
-LLM responses are parsed and validated against the expected Pydantic schema.
-
-The service also handles responses containing surrounding text or Markdown code fences by attempting to extract the JSON object.
-
-### Repair Attempt
-
-If the first model response does not satisfy the required schema, the service performs one repair attempt.
+The service extracts JSON (including from some responses with surrounding text or Markdown fences), then validates it against the `TriageOutput` Pydantic schema. If the first response fails validation, the service requests one corrected response. If the repair also fails, it records the outputs in a quarantine log.
 
 ```text
-LLM Response
-     ↓
-Parse JSON
-     ↓
-Pydantic Validation
-     ↓
-Invalid?
-     │
-     └── Yes → Repair Request
-                    ↓
-               Validate Again
+LLM response
+     |
+     v
+Extract JSON and validate with Pydantic
+     |
+     +-- Valid --> Return structured result
+     |
+     +-- Invalid --> One repair request
+                         |
+                         v
+                    Validate again
+                         |
+                         +-- Valid --> Return result
+                         +-- Invalid --> Quarantine log
 ```
-
-If the repaired output is still invalid, information about the failure is written to a quarantine log for debugging.
 
 ---
 
 ## LLM Configuration
 
-The model provider is configured through environment variables.
+The OpenAI-compatible Python client is configured through environment variables, so compatible providers can be used without rewriting the service. Local development and evaluation used Ollama with `llama3.2:3b`.
 
 ```env
-LLM_BASE_URL=
-LLM_API_KEY=
-LLM_MODEL=
+LLM_BASE_URL=http://host.docker.internal:11434/v1
+LLM_API_KEY=your_local_api_key
+LLM_MODEL=llama3.2:3b
 LLM_STUB=0
 LLM_ENABLED=true
 ```
 
-The implementation uses an OpenAI-compatible client interface, allowing compatible model providers to be configured without rewriting the triage service.
+The `host.docker.internal` address lets the application container reach Ollama on the Windows host. Store real secrets only in the ignored `.env` file. Start Ollama and download the model if needed:
 
-A local Ollama model was used during development and evaluation.
+```powershell
+ollama pull llama3.2:3b
+```
+
+### Prompt Versioning
+
+```text
+prompts/
+├── triage-v1.md
+└── triage-v2.md
+```
+
+The active prompt is selected in `llm/triage_service.py`:
+
+```python
+PROMPT_PATH = ROOT_DIR / "prompts" / "triage-v2.md"
+PROMPT_VERSION = "triage-v2"
+```
+
+Version 2 adds explicit category definitions, urgency rules, ambiguity handling, and instructions to treat customer messages as untrusted data. The active version was verified inside Docker using:
+
+```powershell
+docker compose exec app python -c "from llm.triage_service import get_prompt_version; print(get_prompt_version())"
+```
+
+Recorded output: `triage-v2`.
 
 ---
 
 # 4. LLM Evaluation
 
-The `evals/` directory contains a small evaluation harness for checking triage behavior against predefined scenarios.
+The `evals/` directory contains a labeled development evaluation set and a script that submits each case to the live `/triage/` endpoint.
 
 ```text
 evals/
@@ -258,55 +289,64 @@ evals/
 └── run_eval.py
 ```
 
-Cases include examples such as:
+The eight cases cover billing, refunds, bugs, feature requests, vague messages, and prompt-injection attempts. Each case specifies an expected category and urgency.
 
-- Billing issues
-- Application bugs
-- Feature requests
-- Refund requests
-- Ambiguous requests
-- Uncertain messages
-- Prompt-injection attempts
+### Run the Evaluation
 
-The evaluation runner submits each case to the triage endpoint and compares the returned category with the expected category.
+Ensure Docker, FastAPI, and Ollama are running. From the project directory:
 
-A recorded development evaluation produced:
-
-```text
-7 / 8 category matches
-87.5%
+```powershell
+python evals\run_eval.py
 ```
 
-This result represents the eight-case development evaluation set and should not be interpreted as general model accuracy.
+### Recorded Results — 8 October 2026
 
-The ambiguous-message case was the unsuccessful classification in that run.
+| Metric | Prompt V1 baseline | Prompt V2 |
+|---|---:|---:|
+| Category matches | 6/7 (85.7%) | **8/8 (100.0%)** |
+| Urgency matches | 4/7 (57.1%) | **8/8 (100.0%)** |
+| Successful requests | 7/8 | **8/8** |
+| Request failures | 1 | **0** |
+
+The match-rate denominator is successful requests, not all eight cases. The recorded V2 evaluation printed:
+
+```text
+=== AI TRIAGE EVALUATION ===
+Total cases: 8
+Successful requests: 8/8
+Request failures: 0
+Category matches: 8/8 (100.0%)
+Urgency matches: 8/8 (100.0%)
+
+Mismatches and errors:
+none
+```
+
+**Limitations:** Eight cases are too few to establish production accuracy. Some V2 prompt examples closely resemble evaluation cases, so this is not an independent holdout test. Timeouts also differed between runs, limiting direct comparison of request reliability. Future work should evaluate unseen cases across repeated runs and measure latency.
+
+### Automated Tests
+
+The project also has a separate pytest suite, previously recorded at **38 passing tests**, including mocked AI triage tests. These tests verify application behavior and are not a substitute for live model evaluation.
+
+```powershell
+python -m pytest -v
+```
+
+The repository also uses GitHub Actions for CI testing.
 
 ---
 
 # 5. LLM Observability
 
-Model calls record operational metadata including:
+Model calls record operational metadata, including timestamp, prompt version, model, reported input/output token counts, request duration, and whether a repair attempt was used.
 
 ```text
-Timestamp
-Prompt version
-Model
-Input tokens
-Output tokens
-Request duration
-Whether repair was required
+logs/
+├── cost.jsonl
+└── quarantine.jsonl
 ```
 
-This provides basic visibility into model usage, latency, and structured-output reliability.
-
-Prompt versions are stored separately under:
-
-```text
-prompts/
-└── triage-v1.md
-```
-
-Separating prompts from application logic makes prompt changes easier to review and evaluate.
+`cost.jsonl` stores usage and latency metadata (not calculated monetary cost). `quarantine.jsonl` stores model outputs that still fail validation after repair, along with diagnostic information. Logs can help identify slow calls, provider failures, and invalid model responses.
 
 ---
 
@@ -583,7 +623,8 @@ FlyRank_Backend-AI/
 │   └── triage_service.py
 │
 ├── prompts/
-│   └── triage-v1.md
+│   ├── triage-v1.md
+│   └── triage-v2.md
 │
 ├── evals/
 │   ├── cases.json

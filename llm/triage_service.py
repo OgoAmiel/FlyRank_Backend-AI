@@ -15,11 +15,11 @@ from llm.schemas import TriageOutput
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-PROMPT_PATH = ROOT_DIR / "prompts" / "triage-v1.md"
-PROMPT_VERSION = "triage-v1"
+PROMPT_PATH = ROOT_DIR / "prompts" / "triage-v2.md"
+PROMPT_VERSION = "triage-v2"
 QUARANTINE_PATH = ROOT_DIR / "logs" / "quarantine.jsonl"
 COST_LOG_PATH = ROOT_DIR / "logs" / "cost.jsonl"
-REQUEST_TIMEOUT_SECONDS = 30.0
+REQUEST_TIMEOUT_SECONDS = 60.0
 RETRY_DELAYS_SECONDS = [1.0, 2.0, 4.0]
 
 
@@ -133,8 +133,8 @@ def _call_model(messages: list[dict[str, str]], used_repair: bool) -> str:
                 time.sleep(delay)
                 continue
             raise LLMTimeoutError(
-                "The model request timed out after 30 seconds"
-            ) from exc
+                f"The model request timed out after {REQUEST_TIMEOUT_SECONDS:g} seconds"
+                ) from exc
         except APIConnectionError as exc:
             if attempt < len(RETRY_DELAYS_SECONDS):
                 delay = RETRY_DELAYS_SECONDS[attempt] + random.uniform(0.0, 0.35)
