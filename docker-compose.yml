@@ -20,11 +20,25 @@ services:
     env_file:
       - .env
 
+    environment:
+      REDIS_URL: redis://redis:6379/0
+
     ports:
       - "8000:8000"
 
     depends_on:
       - db
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: tasks_redis
+
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+
+    volumes:
+      - redis_data:/data
 
 volumes:
   postgres_data:
+  redis_data:

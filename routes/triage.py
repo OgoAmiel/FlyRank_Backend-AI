@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from llm.schemas import TriageInput, TriageOutput
+from llm.cache import get_cached_triage, cache_triage
 from llm.triage_service import (
     LLMProviderError,
     LLMTimeoutError,
@@ -62,6 +63,10 @@ def triage_message(payload: dict = Body(...)):
                 },
             },
         )
+    cached_output = get_cached_triage(request.text)
+
+    if cached_output is not None:
+        return cached_output
 
     try:
         output = generate_triage_output(request.text)
@@ -90,4 +95,5 @@ def triage_message(payload: dict = Body(...)):
     except Exception as exc:
         return JSONResponse(status_code=502, content={"error": f"Model call failed: {exc}"})
 
+    cache_triage(request.text, output)
     return output
