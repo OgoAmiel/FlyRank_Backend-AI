@@ -117,10 +117,10 @@ def test_triage_endpoint_cache_hit(monkeypatch):
     monkeypatch.setenv("LLM_ENABLED", "1")
 
     monkeypatch.setattr(
-        triage,
-        "get_cached_triage",
-        lambda text: cached_output,
-    )
+    triage,
+    "get_cached_triage_with_status",
+    lambda text: (cached_output, "hit"),
+)
 
     def fail_if_model_called(text):
         raise AssertionError(
@@ -165,10 +165,10 @@ def test_triage_endpoint_cache_miss(monkeypatch):
     monkeypatch.setenv("LLM_ENABLED", "1")
 
     monkeypatch.setattr(
-        triage,
-        "get_cached_triage",
-        lambda text: None,
-    )
+    triage,
+    "get_cached_triage_with_status",
+    lambda text: (None, "miss"),
+)
 
     def fake_model(text):
         calls.append(text)
@@ -200,3 +200,77 @@ def test_triage_endpoint_cache_miss(monkeypatch):
         ("The application keeps crashing", expected_output)
     ]
 
+
+def test_cache_error_status_when_redis_unavailable(monkeypatch):
+    import redis
+
+    from llm import cache
+
+    class BrokenRedis:
+        def get(self, key):
+            raise redis.ConnectionError("Redis unavailable")
+
+    monkeypatch.setattr(
+        cache,
+        "_get_redis_client",
+        lambda: BrokenRedis(),
+    )
+
+    output, status = cache.get_cached_triage_with_status(
+        "Test Redis failure"
+    )
+
+    assert output is None
+    assert status == "error"
+
+
+def test_triage_endpoint_records_redis_error(monkeypatch):
+    from fastapi.testclient import TestClient
+    from main import app
+    from routes import triage
+    from llm.schemas import TriageOutput
+    from llm.cache_metrics import get_cache_metrics
+
+    client = TestClient(app)
+
+    expected_output = TriageOutput(
+        category="bug",
+        urgency="high",
+        confidence=0.95,
+        reason="Application crashes on startup.",
+    )
+
+    monkeypatch.setenv("LLM_STUB", "0")
+    monkeypatch.setenv("LLM_ENABLED", "1")
+
+    monkeypatch.setattr(
+        triage,
+        "get_cached_triage_with_status",
+        lambda text: (None, "error"),
+    )
+
+    monkeypatch.setattr(
+        triage,
+        "generate_triage_output",
+        lambda text: expected_output,
+    )
+
+    monkeypatch.setattr(
+        triage,
+        "cache_triage",
+        lambda text, output: None,
+    )
+
+    errors_before = get_cache_metrics()["errors"]
+
+    response = client.post(
+        "/triage",
+        json={"text": "Application crashes on startup."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["category"] == "bug"
+
+    errors_after = get_cache_metrics()["errors"]
+
+    assert errors_after == errors_before + 1

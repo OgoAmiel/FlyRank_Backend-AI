@@ -49,23 +49,45 @@ def _cache_key(text: str) -> str:
     return f"triage:{digest}"
 
 
-def get_cached_triage(text: str) -> TriageOutput | None:
+def get_cached_triage_with_status(
+    text: str,
+) -> tuple[TriageOutput | None, str]:
+    """
+    Read a cached classification and report its status.
+
+    Returns:
+        (output, "hit")   - Valid cached classification found
+        (None, "miss")    - Cache key does not exist
+        (None, "error")   - Redis unavailable or invalid cache data
+    """
     try:
         client = _get_redis_client()
 
         if client is None:
-            return None
+            return None, "error"
 
         cached = client.get(_cache_key(text))
 
         if cached is None:
-            return None
+            return None, "miss"
 
-        return TriageOutput.model_validate_json(cached)
+        output = TriageOutput.model_validate_json(cached)
+
+        return output, "hit"
 
     except (redis.RedisError, ValueError, ValidationError) as exc:
         logger.warning("Redis cache read failed: %s", exc)
-        return None
+        return None, "error"
+
+
+def get_cached_triage(text: str) -> TriageOutput | None:
+    """
+    Backward-compatible cache reader.
+
+    Returns the cached output or None.
+    """
+    output, _status = get_cached_triage_with_status(text)
+    return output
 
 
 def cache_triage(text: str, output: TriageOutput) -> None:

@@ -1,11 +1,14 @@
 import os
+import logging
+import time
 
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from llm.cache_metrics import record_cache_lookup, get_cache_metrics
 
 from llm.schemas import TriageInput, TriageOutput
-from llm.cache import get_cached_triage, cache_triage
+from llm.cache import get_cached_triage_with_status, cache_triage
 from llm.triage_service import (
     LLMProviderError,
     LLMTimeoutError,
@@ -13,6 +16,8 @@ from llm.triage_service import (
     generate_triage_output,
 )
 
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/triage", tags=["Triage"])
 
@@ -36,7 +41,11 @@ def _is_enabled(name: str, default: bool = True) -> bool:
 
 @router.post("/", response_model=TriageOutput, summary="Classify a support message")
 def triage_message(payload: dict = Body(...)):
-    """Stage 3 endpoint: validate input, parse/validate model output, repair once, then return schema JSON."""
+    """
+    Validate input, check Redis cache, generate and validate
+    model output when needed, and return structured JSON.
+    """
+
     try:
         request = TriageInput.model_validate(payload)
     except ValidationError as exc:
@@ -63,17 +72,36 @@ def triage_message(payload: dict = Body(...)):
                 },
             },
         )
-    cached_output = get_cached_triage(request.text)
+    # STEP 1: Check Redis cache
+    start = time.perf_counter()
 
-    if cached_output is not None:
+    cached_output, cache_status = get_cached_triage_with_status(request.text)
+
+    lookup_duration = time.perf_counter() - start
+
+    record_cache_lookup(cache_status, lookup_duration)
+
+    if cache_status == "hit":
+        logger.info("Redis cache HIT - returning cached classification")
         return cached_output
+
+    if cache_status == "error":
+        logger.warning("Redis cache ERROR - falling back to AI classification")
+    else:
+        logger.info("Redis cache MISS - generating AI classification")
 
     try:
         output = generate_triage_output(request.text)
     except TriageProcessingError as exc:
-        return JSONResponse(status_code=422, content={"error": exc.message})
+        return JSONResponse(
+            status_code=422,
+            content={"error": exc.message},
+        )
     except LLMTimeoutError as exc:
-        return JSONResponse(status_code=504, content={"error": exc.message})
+        return JSONResponse(
+            status_code=504,
+            content={"error": exc.message},
+        )
     except LLMProviderError as exc:
         if exc.status_code == 401:
             return JSONResponse(
@@ -91,9 +119,23 @@ def triage_message(payload: dict = Body(...)):
             },
         )
     except RuntimeError as exc:
-        return JSONResponse(status_code=500, content={"error": str(exc)})
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(exc)},
+        )
     except Exception as exc:
-        return JSONResponse(status_code=502, content={"error": f"Model call failed: {exc}"})
+        return JSONResponse(
+            status_code=502,
+            content={"error": f"Model call failed: {exc}"},
+        )
 
+    # STEP 3: Cache successful AI classification
     cache_triage(request.text, output)
+
+    logger.info("AI classification completed - cache write attempted")
+
     return output
+
+@router.get("/metrics", summary="View Redis cache metrics")
+def triage_cache_metrics():
+    return get_cache_metrics()
