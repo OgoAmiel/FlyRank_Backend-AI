@@ -10,11 +10,11 @@ The repository was developed as part of practical backend and AI engineering wor
 |---|---|---|
 | Task API | RESTful task management and persistence | FastAPI, PostgreSQL, SQLModel |
 | Authentication | User authentication and protected routes | Supabase, Bearer Tokens |
-| AI Triage | Customer-support message classification | FastAPI, Pydantic, LLM APIs |
+| AI Triage | Customer-support message classification with Redis caching | FastAPI, Pydantic, Ollama, Redis |
 | LLM Evaluation | Evaluate triage classification behavior | Python, JSON |
 | Background Jobs | Asynchronous report processing | FastAPI, Inngest |
 | Web Scraper | Structured web data extraction pipeline | Python, BeautifulSoup, Pydantic |
-| Infrastructure | Containerized application and database | Docker, Docker Compose |
+| Infrastructure | Containerized application, PostgreSQL, and Redis | Docker, Docker Compose |
 
 ---
 
@@ -32,7 +32,7 @@ FlyRank Backend & AI
 │   └── Protected Routes
 │
 ├── AI Systems
-│   ├── AI Triage
+│   ├── AI Triage + Redis Cache
 │   ├── Evaluation
 │   └── Observability
 │
@@ -201,6 +201,49 @@ The expected labels for the second example are `bug` and `high`.
 
 ---
 
+### Redis Classification Cache
+
+The triage endpoint uses **Redis** to cache successful AI classifications and avoid unnecessary repeat Ollama calls. After input validation and configuration checks, FastAPI looks for a cached classification before invoking the model.
+
+```text
+POST /triage/
+      |
+      v
+Validate message
+      |
+      v
+Check Redis cache
+      |
+      +-- HIT  --> Return saved TriageOutput (skip Ollama)
+      |
+      +-- MISS --> Classify with Ollama
+                        |
+                        v
+                  Validate output
+                        |
+                        v
+                  Cache successful result (24-hour TTL)
+                        |
+                        v
+                  Return classification
+```
+
+- **Cache key:** SHA-256 digest incorporating message text, active prompt version, and configured model. Changing the prompt version or model produces a different key.
+- **Expiration:** 86,400 seconds (24 hours), using Redis `SETEX`.
+- **Resilience:** Redis read/write errors are logged and do not prevent the application from using Ollama. Only successful classifications are cached.
+- **Privacy:** The Redis key uses a hash rather than the raw customer message; cached values still contain the classification and reason, so Redis access should be protected.
+
+#### Recorded local latency comparison
+
+| Request | Observed latency |
+|---|---:|
+| First request (cache miss, Ollama inference) | 28.46 seconds |
+| Identical repeated request (cache hit) | 0.13 seconds |
+
+The repeated request was approximately **220× faster** in this local test. This is a single illustrative measurement, not a production benchmark; new or uncached messages still require model inference.
+
+---
+
 ## LLM Reliability
 
 The triage service includes safeguards around model calls and model-generated responses.
@@ -246,6 +289,7 @@ LLM_API_KEY=your_local_api_key
 LLM_MODEL=llama3.2:3b
 LLM_STUB=0
 LLM_ENABLED=true
+REDIS_URL=redis://redis:6379/0
 ```
 
 The `host.docker.internal` address lets the application container reach Ollama on the Windows host. Store real secrets only in the ignored `.env` file. Start Ollama and download the model if needed:
@@ -326,13 +370,15 @@ none
 
 ### Automated Tests
 
-The project also has a separate pytest suite, previously recorded at **38 passing tests**, including mocked AI triage tests. These tests verify application behavior and are not a substitute for live model evaluation.
+The project also has a separate pytest suite, currently verified at **47 passing tests**, including mocked AI triage tests. These tests verify application behavior and are not a substitute for live model evaluation.
 
 ```powershell
 python -m pytest -v
 ```
 
-The repository also uses GitHub Actions for CI testing.
+The repository uses **GitHub Actions** for continuous integration. The workflow checks out the repository, sets up Python 3.13, installs dependencies from `requirements.txt`, and runs `python -m pytest -v`. The workflow for Redis caching commit `cb36b26` passed **47/47 tests** on a Linux runner. This verifies automated tests, **not** deployment (CD).
+
+The test suite includes authentication, task endpoints, health checks, triage validation/error handling, and nine Redis cache tests covering hits, misses, TTL, failure handling, and endpoint behavior.
 
 ---
 
@@ -519,13 +565,14 @@ See `scraper/README.md` for additional implementation details.
 
 # 9. Docker & PostgreSQL
 
-The main FastAPI application and PostgreSQL database can be run using Docker Compose.
+The main FastAPI application, PostgreSQL database, and Redis cache can be run using Docker Compose.
 
 The environment contains:
 
 ```text
 tasks_app → FastAPI application
 tasks_db  → PostgreSQL 17
+tasks_redis → Redis 7 Alpine
 ```
 
 Start the environment with:
@@ -620,6 +667,7 @@ FlyRank_Backend-AI/
 ├── llm/
 │   ├── schemas.py
 │   ├── hello.py
+│   ├── cache.py
 │   └── triage_service.py
 │
 ├── prompts/
@@ -659,9 +707,10 @@ FlyRank_Backend-AI/
 - SQLModel
 - SQLAlchemy
 
-**Database**
+**Database & Cache**
 
 - PostgreSQL
+- Redis
 
 **Authentication**
 
@@ -685,10 +734,12 @@ FlyRank_Backend-AI/
 - BeautifulSoup
 - Requests
 
-**Infrastructure**
+**Infrastructure & CI**
 
 - Docker
 - Docker Compose
+- GitHub Actions
+- pytest
 
 ---
 
