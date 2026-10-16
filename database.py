@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from models import Task
+from jobs_api.models import ReportJob, OutboxEvent
 
 # Load environment variables
 load_dotenv()
